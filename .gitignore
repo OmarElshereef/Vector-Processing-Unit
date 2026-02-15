@@ -1,0 +1,35 @@
+# ModelSim/QuestaSim Work Libraries
+work/
+**/work/
+
+# ModelSim Configuration Files
+modelsim.ini
+modelsim.ini_new
+*.mpf
+
+# Waveform Files
+*.vcd
+*.wlf
+*.vstf
+
+# Log Files
+*.log
+transcript
+
+# Compiled Simulation Files
+*.qdb
+*.qpg
+*.qtl
+_info
+_vmake
+*_lock
+
+# Temporary Directories
+_temp/
+_tempmsg/
+_data/
+@_opt*/
+
+# Coverage Files
+*.ucdb
+
