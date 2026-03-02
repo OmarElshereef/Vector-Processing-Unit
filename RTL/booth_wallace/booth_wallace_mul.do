@@ -9,10 +9,10 @@ if {[file exists work]} {
 vlib work
 
 # Compile sources (explicit ordering helps for dependencies)
-vlog full_adder.sv
-vlog half_adder.sv
+vlog ../common/full_adder.sv
 vlog booth_encoder.sv
-vlog no_ripple_n_full_adder.sv
+vlog CSA_3_2.sv
+vlog CSA_4_2.sv
 vlog wallace_tree.sv
 vlog booth_wallace_mul.sv
 

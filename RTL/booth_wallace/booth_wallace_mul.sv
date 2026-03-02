@@ -2,19 +2,20 @@
 // Uses Radix-4 Modified Booth Encoding + Wallace Tree reduction
 
 module booth_wallace_multiplier #(
-    parameter WIDTH = 16
+    parameter WIDTH = 64
 )(
     input  [WIDTH-1:0] multiplicand,
     input  [WIDTH-1:0] multiplier,
+    input  is_unsigned,  // Control signal: 1 for unsigned, 0 for signed
     output [2*WIDTH-1:0] product
 );
 
     // Number of partial products after Booth encoding
-    localparam NUM_PP = (WIDTH + 1) / 2;
+    localparam NUM_PP = (WIDTH/2) + 1;
     
     // Partial products array
     wire [2*WIDTH-1:0] partial_products [0:NUM_PP-1];
-    
+
     // Generate partial products using Booth encoding
     genvar i;
     generate
@@ -23,6 +24,7 @@ module booth_wallace_multiplier #(
                 .multiplicand(multiplicand),
                 .multiplier(multiplier),
                 .index(i),
+                .is_unsigned(is_unsigned),
                 .partial_product(partial_products[i])
             );
         end
@@ -34,6 +36,7 @@ module booth_wallace_multiplier #(
         .NUM_INPUTS(NUM_PP)
     ) wallace (
         .inputs(partial_products),
+        .is_unsigned(is_unsigned),
         .sum(product)
     );
 
