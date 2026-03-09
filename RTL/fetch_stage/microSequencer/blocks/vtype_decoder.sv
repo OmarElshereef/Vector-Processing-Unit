@@ -3,8 +3,8 @@ module vtype_decoder #(
 ) (
     input  logic [2:0] vsew,
     input  logic [2:0] vlmul,
-    input  logic       vta,
-    input  logic       vma,
+    input  logic       vta, // vector tail agnostic
+    input  logic       vma, // vector mask agnostic
 
     output logic [6:0]  eew,// effective element width in bits
     output logic [3:0]  reg_group_size,
