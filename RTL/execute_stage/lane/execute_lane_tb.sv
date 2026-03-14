@@ -38,15 +38,15 @@ module executeLane_tb;
     // DUT
     //========================================================================
     executeLane #(
-        .LENGTH      (LENGTH),
-        .SUB_LENGTH  (SUB_LENGTH),
-        .ELEN_WIDTH  (ELEN_WIDTH),
-        .FINAL_WIDTH (FINAL_WIDTH)
+        .LANE_WIDTH      (LENGTH),
+        .UNIT_WIDTH  (SUB_LENGTH),
+        .SEW_BITS  (ELEN_WIDTH),
+        .FINAL_BITS (FINAL_WIDTH)
     ) dut (
         .clk           (clk),
         .latch_en      (latch_en),
         .chained_carry (chained_carry),
-        .elen          (elen),
+        .eew_log2          (elen),
         .operand       (operand),
         .opcode        (opcode),
         .result        (result),

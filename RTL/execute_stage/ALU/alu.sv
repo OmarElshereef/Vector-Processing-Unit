@@ -1,64 +1,116 @@
-module addModule #(
-    parameter LENGTH = 32, 
-    SUB_LENGTH = 8, 
-    ELEN_WIDTH = $clog2($clog2(LENGTH/SUB_LENGTH) + 1), 
-    FINAL_WIDTH = (ELEN_WIDTH < 1) ? 1 : ELEN_WIDTH
+module laneALU #(
+    parameter LANE_WIDTH = 64,
+    parameter UNIT_WIDTH = 16,
+    parameter SEW_BITS   = $clog2($clog2(LANE_WIDTH/UNIT_WIDTH) + 1),
+    parameter FINAL_BITS = (SEW_BITS < 1) ? 1 : SEW_BITS
 ) (
-    input [2:0] mode, //0 addition, 1 subtraction, 2 OR, 3 AND, 4 NOT, 5 XOR, 6 MUL
-    input [FINAL_WIDTH:0] elen,
-    input [LENGTH-1:0] op1,
-    input [LENGTH-1:0] op2,
-    input carry_in,
-    output reg [LENGTH-1:0] out,
-    output reg carry
+    // Operation selector
+    input [2:0] opcode,  // 0=ADD, 1=SUB, 2=OR, 3=AND, 4=NOT, 5=XOR, 6=MUL
+    
+    // Element width selector (log2 encoded: 0=8b, 1=16b, 2=32b, 3=64b)
+    input [FINAL_BITS:0] eew_log2,
+    
+    // Sign control for multiplication
+    input is_signed,     // 1=signed multiply, 0=unsigned multiply
+    
+    // Operands (full lane width)
+    input [LANE_WIDTH-1:0] operand1,
+    input [LANE_WIDTH-1:0] operand2,
+    
+    // Carry chain
+    input  carry_in,
+    output carry_out,
+    
+    output [LANE_WIDTH-1:0]   result,
+    output [2*LANE_WIDTH-1:0] result_wide  // For widening multiply operations
 );
-    //-------- submodule generation ---------//
-    localparam INSTANCES_COUNT = LENGTH/SUB_LENGTH;
-    wire carry_bus [INSTANCES_COUNT:0];
-    wire [LENGTH-1: 0] operational_out;
-    wire [LENGTH-1: 0] op2_modified;
+
+    localparam UNIT_COUNT = LANE_WIDTH / UNIT_WIDTH;
     
-    //------- operation mode handling ----------//
-    assign op2_modified = op2 ^ {LENGTH{mode[0]}};
-    assign carry_bus[0] = (mode == 3'd1 || mode == 3'd0) ? carry_in : 1'b0;
+    // =========================================================================
+    // Internal Signals
+    // =========================================================================
+    wire [UNIT_COUNT:0] carry_chain;
+    wire [LANE_WIDTH-1:0] operand2_inverted;
+    wire [LANE_WIDTH-1:0] arith_logic_result;
+    wire [2*LANE_WIDTH-1:0] mul_result_wide;
+    wire [1:0] mul_vector_mode = eew_log2[1:0];
+
+    // =========================================================================
+    // Multiplier Instantiation
+    // =========================================================================
+    booth_wallace_mul_mod #(
+        .WIDTH(LANE_WIDTH)
+    ) multiplier (
+        .multiplier    (operand1),
+        .multiplicand  (operand2),
+        .vector_mode   (mul_vector_mode),    // Map eew_log2 to vector_mode
+        .is_unsigned   (~is_signed),       // Invert: multiplier uses is_unsigned
+        .result        (mul_result_wide)
+    );
     
-    //------- instances loop ----------//
+    // =========================================================================
+    // Operation Mode Handling
+    // =========================================================================
+    assign operand2_inverted = operand2 ^ {LANE_WIDTH{opcode[0]}};
+    assign carry_chain[0] = (opcode == 3'd1 || opcode == 3'd0) ? carry_in : 1'b0;
+    
+    // =========================================================================
+    // Arithmetic/Logic Unit Array
+    // =========================================================================
     genvar i;
     generate 
-        for (i = 0; i < INSTANCES_COUNT; i = i + 1)
-        begin: gen_adders
-            wire effective_cin;
+        for (i = 0; i < UNIT_COUNT; i = i + 1) begin: gen_alu_units
+            
+            // Carry propagation logic
+            wire unit_carry_in;
             if (i == 0) begin
-                assign effective_cin = carry_bus[0];
+                assign unit_carry_in = carry_chain[0];
             end else begin
-                wire is_boundary;
-                assign is_boundary = (i % (1 << elen) == 0); 
-                assign effective_cin = is_boundary ? (mode == 3'd1) : carry_bus[i];
+                wire is_element_boundary;
+                assign is_element_boundary = (i % (1 << eew_log2) == 0);
+                assign unit_carry_in = is_element_boundary ? 
+                                       (opcode == 3'd1) : 
+                                       carry_chain[i];
             end
             
-            // Logical operations - use continuous assignment
-            wire [SUB_LENGTH-1:0] unit_op1 = op1[i*SUB_LENGTH +: SUB_LENGTH];
-            wire [SUB_LENGTH-1:0] unit_op2 = (mode == 3'd1) ? op2_modified[i*SUB_LENGTH +: SUB_LENGTH] : op2[i*SUB_LENGTH +: SUB_LENGTH];
-	    wire [SUB_LENGTH:0] arith_result;
-            wire [SUB_LENGTH-1:0] unit_result;
+            // Extract unit operands
+            wire [UNIT_WIDTH-1:0] unit_op1;
+            wire [UNIT_WIDTH-1:0] unit_op2;
+            wire [UNIT_WIDTH-1:0] unit_result;
             
-	    assign arith_result = unit_op1 + unit_op2 + effective_cin;
-
-	    assign carry_bus[i+1] = (mode == 3'd0 || mode == 3'd1) ? 
-                         arith_result[SUB_LENGTH] : 1'b0;
-	    
-            assign unit_result =(mode == 3'd0 || mode == 3'd1) ? arith_result[SUB_LENGTH-1:0] :
-				(mode == 3'd2) ? (unit_op1 | unit_op2) :
-                                (mode == 3'd3) ? (unit_op1 & unit_op2) :
-                                (mode == 3'd4) ? (~unit_op1) :
-                                (mode == 3'd5) ? (unit_op1 ^ unit_op2) :
-				(mode == 3'd6) ? (unit_op1 * unit_op2) :
-				{SUB_LENGTH{1'bx}};
+            assign unit_op1 = operand1[i*UNIT_WIDTH +: UNIT_WIDTH];
+            assign unit_op2 = (opcode == 3'd1) ? 
+                              operand2_inverted[i*UNIT_WIDTH +: UNIT_WIDTH] :
+                              operand2[i*UNIT_WIDTH +: UNIT_WIDTH];
             
-            assign operational_out[i*SUB_LENGTH +: SUB_LENGTH] = unit_result;
+            // Arithmetic operation
+            wire [UNIT_WIDTH:0] arith_sum;
+            assign arith_sum = unit_op1 + unit_op2 + unit_carry_in;
+            assign carry_chain[i+1] = (opcode == 3'd0 || opcode == 3'd1) ? 
+                                      arith_sum[UNIT_WIDTH] : 1'b0;
+            
+            // Operation selection (excluding MUL - handled separately)
+            assign unit_result = (opcode == 3'd0 || opcode == 3'd1) ? arith_sum[UNIT_WIDTH-1:0] :
+                                 (opcode == 3'd2) ? (unit_op1 | unit_op2) :
+                                 (opcode == 3'd3) ? (unit_op1 & unit_op2) :
+                                 (opcode == 3'd4) ? (~unit_op1) :
+                                 (opcode == 3'd5) ? (unit_op1 ^ unit_op2) :
+                                 {UNIT_WIDTH{1'bx}};
+            
+            assign arith_logic_result[i*UNIT_WIDTH +: UNIT_WIDTH] = unit_result;
         end
     endgenerate
     
-    assign out = operational_out;
-    assign carry = carry_bus[INSTANCES_COUNT] ^ (mode == 3'd1);
+    // =========================================================================
+    // Output Selection
+    // =========================================================================
+    assign carry_out = carry_chain[UNIT_COUNT] ^ (opcode == 3'd1);
+    
+    // Select between arithmetic/logic result and multiply result
+    assign result = (opcode == 3'd6) ? mul_result_wide[LANE_WIDTH-1:0] : arith_logic_result;
+    
+    // Provide full wide result for widening multiply operations
+    assign result_wide = mul_result_wide;
+
 endmodule

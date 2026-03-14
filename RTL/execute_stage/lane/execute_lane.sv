@@ -1,23 +1,25 @@
 module executeLane #(
-	parameter LENGTH = 64,
-	SUB_LENGTH = 16,
-	ELEN_WIDTH = $clog2($clog2(LENGTH/SUB_LENGTH) + 1), 
-	FINAL_WIDTH = (ELEN_WIDTH < 1) ? 1 : ELEN_WIDTH
+	parameter LANE_WIDTH = 64,
+	UNIT_WIDTH = 16,
+	SEW_BITS = $clog2($clog2(LANE_WIDTH/UNIT_WIDTH) + 1), 
+	FINAL_BITS = (SEW_BITS < 1) ? 1 : SEW_BITS
 )(
 	input clk,
+	input is_signed,
 	input latch_en,
 	input chained_carry,
-	input [FINAL_WIDTH: 0] elen,
-	input [LENGTH-1:0] operand,
+	input [FINAL_BITS: 0] eew_log2,
+	input [LANE_WIDTH-1:0] operand,
 	input [2:0] opcode,
-	output [LENGTH-1:0] result,
+	output [LANE_WIDTH-1:0] result,
+	output[2*LANE_WIDTH-1:0] result_wide,
 	output carry_out
 );
 
-	reg [LENGTH-1:0] op_latch;
+	reg [LANE_WIDTH-1:0] op_latch;
 
-	addModule #(.LENGTH(LENGTH), .SUB_LENGTH(SUB_LENGTH), .ELEN_WIDTH(ELEN_WIDTH), .FINAL_WIDTH(FINAL_WIDTH))
-		ALU (.op1(op_latch), .op2(operand), .elen(elen), .carry_in(chained_carry), .mode(opcode), .out(result), .carry(carry_out));
+	laneALU #(.LANE_WIDTH(LANE_WIDTH), .UNIT_WIDTH(UNIT_WIDTH), .SEW_BITS(SEW_BITS), .FINAL_BITS(FINAL_BITS))
+		ALU (.operand1(op_latch), .operand2(operand), .eew_log2(eew_log2), .carry_in(chained_carry), .opcode(opcode), .result(result), .result_wide(result_wide), .carry_out(carry_out), .is_signed(is_signed));
 
 	always @(posedge clk) begin
 		if(latch_en)
